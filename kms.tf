@@ -55,6 +55,47 @@ data "aws_iam_policy_document" "this" {
     }
   }
 
+  // A key policy is not like other resource policies: the statement above delegates to IAM rather
+  // than granting anything, so by default every caller needs kms:Decrypt in its own identity policy.
+  // AWS-managed keys such as `aws/s3` carry a statement of exactly this shape instead, which is why
+  // a role holding only s3:GetObject can read an SSE-KMS object today without any KMS permission.
+  // Reproducing it keeps in-account reads and writes working the moment a resource switches to this
+  // key, rather than at whatever later point each application re-applies its IAM policy.
+  //
+  // The `*` principal is confined by kms:CallerAccount. Cross-account callers cannot match it, so
+  // they still need to be listed in trusted_accounts and granted access by their own account.
+  dynamic "statement" {
+    for_each = var.allow_account_use ? [1] : []
+
+    content {
+      sid       = "AllowAccountUse"
+      effect    = "Allow"
+      actions   = local.write_actions
+      resources = ["*"]
+
+      principals {
+        type        = "AWS"
+        identifiers = ["*"]
+      }
+
+      condition {
+        test     = "StringEquals"
+        variable = "kms:CallerAccount"
+        values   = [data.aws_caller_identity.this.account_id]
+      }
+
+      dynamic "condition" {
+        for_each = length(var.via_services) > 0 ? [var.via_services] : []
+
+        content {
+          test     = "StringEquals"
+          variable = "kms:ViaService"
+          values   = condition.value
+        }
+      }
+    }
+  }
+
   // Naming an account root here delegates to that account rather than granting outright: the
   // principal still needs kms:Decrypt from its own identity policy. Cross-account KMS requires
   // both halves, which is why granting the bucket alone is never enough.

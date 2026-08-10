@@ -23,7 +23,8 @@ If nothing crosses an account boundary, you probably don't need this module — 
 | Name                       | Type           | Default | Description                                                                                                              |
 | -------------------------- | -------------- | ------- | ------------------------------------------------------------------------------------------------------------------------ |
 | `trusted_accounts`         | list(object)   | `[]`    | AWS accounts allowed to use this key, each with an access level of `read` or `write`. See [Sharing across AWS accounts](#sharing-across-aws-accounts). |
-| `via_services`             | list(string)   | `[]`    | Restricts trusted accounts to using the key through specific AWS services, e.g. `["s3.us-east-1.amazonaws.com"]`. Empty means any service. |
+| `via_services`             | list(string)   | `[]`    | Restricts key usage to specific AWS services, e.g. `["s3.us-east-1.amazonaws.com"]`. Empty means any service. |
+| `allow_account_use`        | boolean        | `true`  | Lets any principal in this account use the key without `kms:Decrypt` in its own IAM policy, the way AWS-managed keys behave. See [In-account access](#in-account-access). |
 | `enable_key_rotation`      | boolean        | `true`  | Rotates the key's backing material once a year. Transparent — data encrypted before a rotation stays readable.             |
 | `deletion_window_in_days`  | number         | `30`    | How long KMS waits before destroying the key after deletion is requested, between 7 and 30.                                |
 
@@ -37,10 +38,10 @@ If nothing crosses an account boundary, you probably don't need this module — 
 ---
 
 ## How Do I Use This?
-Create this block, then connect it to whatever needs encrypting. An S3 bucket is the common case:
+Create this datastore, then connect it to whatever needs encrypting. An S3 bucket is the common case:
 
 ```yaml
-blocks:
+datastores:
   usage-stats-key:
     module: nullstone/aws-kms-key
     vars:
@@ -48,12 +49,25 @@ blocks:
         - { account_id: "490532603356", access_level: read }
       via_services: ["s3.us-east-1.amazonaws.com"]
 
-datastores:
   usage-stats-archiver:
     module: nullstone/aws-s3-bucket
     connections:
       kms_key: usage-stats-key
 ```
+
+---
+
+## In-account access
+
+A KMS key policy does not behave like other resource policies. The statement granting `kms:*` to the account root does **not** give any principal permission — it only enables IAM policies in the account to grant it. On a plain customer-managed key, every caller therefore needs `kms:Decrypt` in its own IAM policy, which is why attaching one to an existing resource normally breaks readers that were working a moment earlier.
+
+AWS-managed keys avoid this with a second statement, granting use to any principal in the account and confining it with `kms:CallerAccount`. That is why a role holding only `s3:GetObject` can read an SSE-KMS object today without any KMS permission at all.
+
+`allow_account_use` (on by default) reproduces that statement, so a resource can switch to this key with no interruption: everything reading it keeps working, and no application has to update its IAM policy first. Combined with `via_services`, in-account principals may use the key only through the services you name.
+
+Turn it off to require an explicit grant from every caller. That is the tighter posture, but access then has to be granted **before** the key is put into use — otherwise the first object written under it is unreadable until each caller catches up.
+
+Either way this never widens cross-account access. `kms:CallerAccount` matches only principals in this account, so other accounts still need `trusted_accounts` here plus a grant of their own.
 
 ---
 
