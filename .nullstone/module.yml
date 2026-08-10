@@ -1,0 +1,18 @@
+org_name: nullstone
+name: aws-kms-key
+friendly_name: KMS Key
+description: |
+    Creates a customer-managed KMS key that other blocks can connect to for encryption at rest.
+    Supports sharing the key with other AWS accounts, which is required to read cross-account S3 buckets encrypted with SSE-KMS.
+category: datastore
+subcategory: ""
+provider_types:
+    - aws
+platform: kms
+subplatform: ""
+type: ""
+appCategories: []
+is_public: true
+tool_name: opentofu
+include: []
+source_url: https://github.com/nullstone-modules/aws-kms-key

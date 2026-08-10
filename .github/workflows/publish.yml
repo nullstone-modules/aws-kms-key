@@ -1,0 +1,33 @@
+name: Nullstone
+on:
+  push:
+    tags:
+      - 'v*'
+
+env:
+  NULLSTONE_ORG: nullstone
+  NULLSTONE_API_KEY: ${{ secrets.NULLSTONE_API_KEY }}
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+
+    defaults:
+      run:
+        shell: bash
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Set up Nullstone
+        uses: nullstone-io/setup-nullstone-action@v0
+
+      - name: Find version
+        id: version
+        run: echo "MODULE_VERSION=${GITHUB_REF#refs/tags/v}" >> $GITHUB_ENV
+
+      - id: publish
+        name: Publish
+        run: |
+          nullstone modules publish --version=${{ env.MODULE_VERSION }}
